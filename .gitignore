@@ -1,0 +1,37 @@
+# Python local cache
+__pycache__/
+*.py[cod]
+
+# .NET / Visual Studio build output
+bin/
+obj/
+*.dll
+*.pdb
+*.user
+*.suo
+
+# Locally built executables
+TaskbarScreenIndicator/*.exe
+
+# Local diagnostics and runtime reports
+TaskbarScreenIndicator/*.txt
+*.log
+
+# Local launcher generated during experimentation
+start_taskbar_screen_indicator.vbs
+
+# Temporary generated artwork and previews
+pelican-*.png
+pelican-*.jpg
+pelican-*.svg
+
+# OS/editor metadata
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+构建并启动任务栏屏幕标记.cmd
+构建并启动任务栏屏幕标记.ps1
+启动屏幕窗口切换器.cmd
+启动任务栏屏幕标记.cmd
