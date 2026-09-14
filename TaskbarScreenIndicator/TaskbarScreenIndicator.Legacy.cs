@@ -30,7 +30,8 @@ namespace TaskbarScreenIndicator
                 TaskbarInspector.WriteIndicatorReport();
                 return;
             }
-            Application.Run(new IndicatorApplicationContext());
+            var openSettings = args.Any(arg => string.Equals(arg, "--settings", StringComparison.OrdinalIgnoreCase));
+            Application.Run(new IndicatorApplicationContext(openSettings));
         }
     }
 
@@ -39,25 +40,26 @@ namespace TaskbarScreenIndicator
         private readonly NotifyIcon trayIcon;
         private readonly Timer refreshTimer;
         private readonly Dictionary<IntPtr, IndicatorOverlay> overlays = new Dictionary<IntPtr, IndicatorOverlay>();
-        private bool enabled = true;
+        private bool enabled = SettingsStore.Enabled;
 
-        public IndicatorApplicationContext()
+        public IndicatorApplicationContext(bool openSettings)
         {
             var menu = new ContextMenuStrip();
+            var openSettingsItem = new ToolStripMenuItem("打开设置");
+            openSettingsItem.Font = new Font(openSettingsItem.Font, FontStyle.Bold);
             var enabledItem = new ToolStripMenuItem("显示任务栏屏幕标记");
-            enabledItem.Checked = true;
+            enabledItem.Checked = enabled;
             enabledItem.CheckOnClick = true;
             enabledItem.CheckedChanged += delegate
             {
                 enabled = enabledItem.Checked;
+                SettingsStore.Enabled = enabled;
                 RefreshIndicators();
             };
+            openSettingsItem.Click += delegate { ShowSettings(enabledItem); };
+            menu.Items.Add(openSettingsItem);
             menu.Items.Add(enabledItem);
             menu.Items.Add("立即刷新", null, delegate { RefreshIndicators(); });
-            menu.Items.Add(new ToolStripSeparator());
-            foreach (var screen in ScreenLayout.GetScreens())
-                menu.Items.Add(string.Format("{0}：{1}", ColorName(screen.Color), screen.Label), null, delegate { }).Enabled = false;
-            menu.Items.Add("多色：该应用的窗口分布在多个屏幕", null, delegate { }).Enabled = false;
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("退出", null, delegate { ExitThread(); });
 
@@ -66,22 +68,16 @@ namespace TaskbarScreenIndicator
             trayIcon.Text = "任务栏屏幕标记";
             trayIcon.Visible = true;
             trayIcon.ContextMenuStrip = menu;
-            trayIcon.DoubleClick += delegate { RefreshIndicators(); };
+            trayIcon.DoubleClick += delegate { ShowSettings(enabledItem); };
 
             refreshTimer = new Timer();
-            refreshTimer.Interval = 900;
+            refreshTimer.Interval = SettingsStore.RefreshInterval;
             refreshTimer.Tick += delegate { RefreshIndicators(); };
             refreshTimer.Start();
             SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            if (openSettings)
+                ShowSettings(enabledItem);
             RefreshIndicators();
-        }
-
-        private static string ColorName(Color color)
-        {
-            if (color.R == 0 && color.G == 176) return "蓝色";
-            if (color.R == 255 && color.G == 156) return "橙色";
-            if (color.R == 117 && color.G == 220) return "绿色";
-            return "彩色";
         }
 
         private void OnDisplaySettingsChanged(object sender, EventArgs args)
@@ -119,6 +115,22 @@ namespace TaskbarScreenIndicator
             {
                 pair.Value.Dispose();
                 overlays.Remove(pair.Key);
+            }
+        }
+
+        private void ShowSettings(ToolStripMenuItem enabledItem)
+        {
+            using (var form = new SettingsForm(ScreenLayout.GetScreens(), enabledItem.Checked, refreshTimer.Interval))
+            {
+                if (form.ShowDialog() != DialogResult.OK)
+                    return;
+                SettingsStore.Enabled = form.EnabledValue;
+                SettingsStore.RefreshInterval = form.RefreshIntervalValue;
+                foreach (var pair in form.ScreenColors)
+                    SettingsStore.SetScreenColor(pair.Key, pair.Value);
+                enabledItem.Checked = form.EnabledValue;
+                refreshTimer.Interval = form.RefreshIntervalValue;
+                RefreshIndicators();
             }
         }
 
@@ -217,6 +229,7 @@ namespace TaskbarScreenIndicator
     internal sealed class ScreenInfo
     {
         public IntPtr Handle;
+        public string DeviceName;
         public Rectangle Bounds;
         public string Label;
         public Color Color;
@@ -265,9 +278,10 @@ namespace TaskbarScreenIndicator
                 result.Add(new ScreenInfo
                 {
                     Handle = new IntPtr(screen.DeviceName.GetHashCode()),
+                    DeviceName = screen.DeviceName,
                     Bounds = screen.Bounds,
                     Label = screen.Primary ? "主屏幕" : GetLocationLabel(screen.Bounds, primary),
-                    Color = Palette[index % Palette.Length]
+                    Color = SettingsStore.GetScreenColor(screen.DeviceName, Palette[index % Palette.Length])
                 });
             }
             return result;
